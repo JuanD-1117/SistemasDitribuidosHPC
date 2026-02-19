@@ -1,0 +1,23 @@
+# Binarios compilados
+Taller1HPC/cpp/poisson_cpp
+Taller1HPC/fortran/poisson_f90
+Taller1HPC/**/*.o
+Taller1HPC/**/*.mod
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# LaTeX auxiliares
+*.aux
+*.log
+*.toc
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk

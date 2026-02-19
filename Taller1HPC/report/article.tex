@@ -1,0 +1,1049 @@
+% =============================================================================
+% article.tex -- Informe Tecnico: Optimizacion HPC de la Ecuacion de Poisson 2D
+% Universidad Distrital Francisco Jose de Caldas
+% Sistemas Distribuidos 2026-1
+% Compatible con pdfLaTeX + Overleaf
+% =============================================================================
+
+\documentclass[12pt, a4paper]{article}
+
+% ── Codificacion y lenguaje ───────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish, es-nodecimaldot]{babel}
+
+% ── Matematica ────────────────────────────────────────────────────────────────
+\usepackage{amsmath, amssymb}
+
+% ── Graficos y figuras ────────────────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{float}
+
+% ── Tablas ────────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+
+% ── Color ─────────────────────────────────────────────────────────────────────
+\usepackage[dvipsnames, table]{xcolor}
+
+% ── Codigo fuente ─────────────────────────────────────────────────────────────
+\usepackage{listings}
+
+% ── Geometria y cabecera ──────────────────────────────────────────────────────
+\usepackage{geometry}
+\geometry{margin=2.5cm, top=3cm, bottom=3cm}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+
+% ── Hiperlinks (debe cargarse al final) ───────────────────────────────────────
+\usepackage[colorlinks=true, linkcolor=NavyBlue, citecolor=NavyBlue,
+            urlcolor=NavyBlue]{hyperref}
+
+% ── Estilo de codigo ──────────────────────────────────────────────────────────
+\definecolor{codebg}{RGB}{248,248,248}
+\definecolor{codeframe}{RGB}{200,200,200}
+\definecolor{ccomment}{RGB}{0,120,0}
+\definecolor{ckeyword}{RGB}{0,0,180}
+\definecolor{cstring}{RGB}{160,0,0}
+
+\lstset{
+  basicstyle   = \ttfamily\small,
+  backgroundcolor = \color{codebg},
+  frame        = single,
+  rulecolor    = \color{codeframe},
+  numbers      = left,
+  numberstyle  = \tiny\color{gray},
+  stepnumber   = 5,
+  breaklines   = true,
+  commentstyle = \color{ccomment}\itshape,
+  keywordstyle = \color{ckeyword}\bfseries,
+  stringstyle  = \color{cstring},
+  showstringspaces = false,
+  tabsize      = 4,
+  captionpos   = b,
+  extendedchars = false,   % evita problemas con UTF-8 en listings
+  inputencoding = latin1,  % listings usa su propio encoding interno
+}
+
+\lstdefinestyle{cpp}{language=C++,
+  morekeywords={auto,nullptr,override,final,noexcept,constexpr}}
+\lstdefinestyle{fortran}{language=Fortran,
+  morekeywords={real64,int64,allocate,deallocate,system_clock}}
+
+% ── Cabecera y pie ────────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Universidad Distrital Francisco Jos\'e de Caldas}
+\rhead{\small Sistemas Distribuidos 2026-1}
+\cfoot{\thepage}
+
+% ── Comandos propios ──────────────────────────────────────────────────────────
+\newcommand{\norminf}[1]{\left\|#1\right\|_{\infty}}
+\newcommand{\OK}{\textcolor{OliveGreen}{$\checkmark$}}
+\newcommand{\NO}{\textcolor{BrickRed}{$\times$}}
+\newcommand{\TIMES}[1]{$#1\!\times$}   % p.ej. \TIMES{9{,}4}
+
+% =============================================================================
+\begin{document}
+% =============================================================================
+
+% ── Portada ───────────────────────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+{\Large \textbf{UNIVERSIDAD DISTRITAL FRANCISCO JOS\'E DE CALDAS}\\[0.3cm]
+Facultad de Ciencias Matem\'aticas y Naturales\\[0.2cm]
+Sistemas Distribuidos --- 2026-1}
+
+\vspace{2cm}
+
+{\Huge \textbf{Optimizaci\'on Computacional y An\'alisis de}\\[0.3cm]
+\textbf{Localidad de Cach\'e en la Soluci\'on Num\'erica}\\[0.3cm]
+\textbf{de la Ecuaci\'on de Poisson Bidimensional}}
+
+\vspace{1.5cm}
+
+{\large
+\begin{tabular}{rl}
+\textbf{Docente:}    & Carlos Andr\'es G\'omez Vasco \\[0.3cm]
+\textbf{Lenguajes:}  & C++ (clang 17.0, arm64) \quad Fortran (GFortran 15.1) \\[0.2cm]
+\textbf{Hardware:}   & Apple M3 (arm64) --- 4 n\'ucleos de rendimiento \\[0.2cm]
+                     & L1D: 128\,KB \quad L2: 16\,MB \quad
+                       L\'inea de cach\'e: 128\,bytes \\[0.2cm]
+\textbf{Fecha:}      & Febrero 2026
+\end{tabular}
+}
+\end{titlepage}
+
+% ── Abstract ──────────────────────────────────────────────────────────────────
+\begin{abstract}
+\noindent
+Se estudia la soluci\'on num\'erica de la ecuaci\'on de Poisson bidimensional
+$\nabla^2\phi = \sin(\pi x)\sin(\pi y)$ mediante el m\'etodo iterativo de Jacobi
+sobre mallas uniformes $N\!\times\!N$ con $N \in \{512, 1024, 2048, 4096\}$.
+Se implementan en \textbf{C++} (tres variantes de almacenamiento: \texttt{double**},
+arreglo plano contiguo y \texttt{std::vector}) y en \textbf{Fortran~90}
+(arreglo bidimensional column-major), comparando el impacto del orden de
+bucles, el \emph{blocking} (tiling) y el nivel de optimizaci\'on del compilador.
+Los experimentos se ejecutan en un procesador \textbf{Apple M3 arm64} con
+l\'inea de cach\'e de 128\,bytes y cach\'e L2 de 16\,MB.
+Los resultados demuestran que el orden de los bucles anidados tiene el mayor
+impacto sobre el rendimiento (hasta $16\!\times$ de diferencia para $N=4096$),
+que el tiling no mejora el desempe\~no de este est\'encil en el M3, y que el
+compilador con \texttt{-O2} produce aceleraciones de hasta $16\!\times$ sobre
+c\'odigo no optimizado.
+El an\'alisis del modelo Roofline confirma que el algoritmo es fuertemente
+\emph{memory-bound} con intensidad aritm\'etica de ${\approx}0{,}125$\,FLOP/byte,
+muy por debajo del punto de quiebre de ${\approx}0{,}64$\,FLOP/byte del M3.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =============================================================================
+\section{Introducci\'on}
+% =============================================================================
+
+La ecuaci\'on de Poisson bidimensional es un modelo fundamental de la f\'isica
+matem\'atica, presente en electroest\'atica, transferencia de calor, mec\'anica
+de fluidos y simulaci\'on de materiales~\cite{leveque2007}. Su resoluci\'on
+num\'erica eficiente constituye uno de los problemas can\'onicos del c\'omputo
+cient\'ifico de alto desempe\~no (\emph{High Performance Computing}, HPC).
+
+El presente taller tiene un doble objetivo. Por un lado, derivar el esquema
+num\'erico de diferencias finitas y el m\'etodo iterativo de Jacobi que lo
+resuelve. Por otro, analizar emp\'iricamente c\'omo la organizaci\'on interna
+de la memoria ---conocida como \emph{layout}--- y las t\'ecnicas de
+optimizaci\'on de cach\'e afectan el rendimiento computacional en arquitecturas
+modernas, tomando como referencia el procesador \textbf{Apple M3} (arquitectura
+arm64).
+
+La metodolog\'ia sigue el ciclo cl\'asico del dise\~no \emph{cache-aware}:
+formular el problema, discretizarlo, implementarlo en m\'ultiples variantes,
+medir y finalmente analizar los resultados a la luz del modelo Roofline y la
+jerarqu\'ia de memoria del procesador objetivo.
+
+% =============================================================================
+\section{Formulaci\'on Matem\'atica}
+\label{sec:math}
+% =============================================================================
+
+\subsection{Planteamiento del Problema}
+
+Se busca la funci\'on $\phi : \Omega \to \mathbb{R}$ que satisface:
+\begin{equation}
+  \nabla^2\phi(x,y) = f(x,y),
+  \qquad (x,y)\in\Omega=[0,1]\times[0,1]
+  \label{eq:poisson}
+\end{equation}
+\begin{equation}
+  \phi(x,y) = 0, \qquad \forall\,(x,y)\in\partial\Omega
+  \label{eq:dirichlet}
+\end{equation}
+con t\'ermino fuente $f(x,y) = \sin(\pi x)\sin(\pi y)$.
+
+\subsection{Soluci\'on Anal\'itica}
+
+Proponemos $\phi^*(x,y) = A\sin(\pi x)\sin(\pi y)$. Aplicando el Laplaciano:
+\begin{align}
+  \nabla^2\phi^*
+  &= A\frac{\partial^2}{\partial x^2}\bigl[\sin(\pi x)\sin(\pi y)\bigr]
+   + A\frac{\partial^2}{\partial y^2}\bigl[\sin(\pi x)\sin(\pi y)\bigr]
+  \nonumber\\
+  &= A(-\pi^2)\sin(\pi x)\sin(\pi y)
+   + A(-\pi^2)\sin(\pi x)\sin(\pi y)
+  \nonumber\\
+  &= -2\pi^2 A\,\sin(\pi x)\sin(\pi y) = \sin(\pi x)\sin(\pi y).
+\end{align}
+
+Igualando con la fuente: $-2\pi^2 A = 1$, de donde
+$A = -\tfrac{1}{2\pi^2}$. La \textbf{soluci\'on exacta} es:
+\begin{equation}
+  \boxed{\phi^*(x,y) = -\frac{\sin(\pi x)\sin(\pi y)}{2\pi^2}}
+  \label{eq:exact}
+\end{equation}
+con $\|\phi^*\|_\infty = \tfrac{1}{2\pi^2} \approx 0{,}05066$.
+
+\subsection{Discretizaci\'on por Diferencias Finitas Centradas}
+
+Se introduce una malla uniforme con $N+2$ puntos por dimensi\'on:
+\begin{equation}
+  x_i = i\,h,\quad y_j = j\,h,\quad h = \frac{1}{N+1},
+  \quad i,j = 0,1,\ldots,N+1
+\end{equation}
+Los \textbf{puntos interiores} son $i,j = 1,\ldots,N$; los de frontera
+tienen $\phi = 0$.
+
+La segunda derivada parcial se aproxima con diferencias finitas centradas
+de orden $O(h^2)$:
+\begin{equation}
+  \frac{\partial^2\phi}{\partial x^2}\bigg|_{(x_i,y_j)}
+  = \frac{\phi_{i-1,j} - 2\phi_{i,j} + \phi_{i+1,j}}{h^2} + O(h^2).
+\end{equation}
+
+Sumando ambas direcciones, el \textbf{est\'encil de 5 puntos} resulta:
+\begin{equation}
+  \nabla^2_h\,\phi_{i,j}
+  = \frac{\phi_{i-1,j} + \phi_{i+1,j} + \phi_{i,j-1} + \phi_{i,j+1}
+          - 4\phi_{i,j}}{h^2}.
+\end{equation}
+
+\subsection{Esquema Iterativo de Jacobi}
+
+Igualando el Laplaciano discreto a la fuente y despejando $\phi_{i,j}$:
+\begin{equation}
+  \boxed{\phi^{(k+1)}_{i,j} = \frac{1}{4}\Bigl[
+    \phi^{(k)}_{i-1,j} + \phi^{(k)}_{i+1,j}
+   +\phi^{(k)}_{i,j-1} + \phi^{(k)}_{i,j+1}
+   - h^2 f_{i,j}
+  \Bigr],\quad i,j=1,\ldots,N}
+  \label{eq:jacobi}
+\end{equation}
+
+La actualizaci\'on usa \'unicamente los valores de la iteraci\'on anterior
+(Jacobi puro). La implementaci\'on requiere dos arreglos $\phi^{(k)}$ y
+$\phi^{(k+1)}$ con intercambio de punteros en $O(1)$ al final de cada
+iteraci\'on.
+
+\subsection{Criterio de Convergencia}
+
+El m\'etodo se detiene cuando:
+\begin{equation}
+  \norminf{\phi^{(k+1)} - \phi^{(k)}}
+  = \max_{1\le i,j\le N}
+    \bigl|\phi^{(k+1)}_{i,j} - \phi^{(k)}_{i,j}\bigr|
+  < \varepsilon = 10^{-6}
+  \label{eq:convergence}
+\end{equation}
+
+\noindent\textbf{Justificaci\'on.} La norma infinito de la diferencia entre
+iteraciones consecutivas mide el \emph{residuo de actualizaci\'on}. El m\'etodo
+de Jacobi es una iteraci\'on de punto fijo $\phi = G\phi + c$; cuando esta
+diferencia tiende a cero, la soluci\'on se ha estabilizado.
+
+\noindent\textbf{Observaci\'on importante.} Para $N \geq 450$, la primera
+actualizaci\'on desde $\phi^{(0)} = 0$ satisface el criterio:
+\[
+  \norminf{\phi^{(1)} - \phi^{(0)}}
+  = \frac{h^2}{4}\max_{i,j}|f_{i,j}| = \frac{1}{4(N+1)^2} < 10^{-6}.
+\]
+Para los experimentos de rendimiento se usa un \textbf{n\'umero fijo de
+iteraciones} (Tabla~\ref{tab:iters_config}) que garantiza tiempos medibles
+y comparables.
+
+\begin{table}[H]
+\centering
+\caption{Configuraci\'on de iteraciones fijas para benchmarking}
+\label{tab:iters_config}
+\begin{tabular}{cccc}
+\toprule
+$N$ & Iteraciones & Puntos interiores & Trabajo (GFLOP) \\
+\midrule
+512  & 200 & $2{,}62\times10^5$ & $0{,}419$ \\
+1024 &  80 & $1{,}05\times10^6$ & $0{,}671$ \\
+2048 &  20 & $4{,}19\times10^6$ & $0{,}671$ \\
+4096 &   5 & $1{,}68\times10^7$ & $0{,}671$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{An\'alisis de Convergencia de Jacobi}
+
+El radio espectral de la matriz de iteraci\'on de Jacobi para la ecuaci\'on
+de Poisson 2D en una malla $N\times N$ es:
+\begin{equation}
+  \rho(G_J) = \cos(\pi h)
+  = \cos\!\left(\frac{\pi}{N+1}\right)
+  \approx 1 - \frac{\pi^2}{2(N+1)^2}.
+\end{equation}
+
+El n\'umero de iteraciones necesarias para reducir el error en un factor
+$\varepsilon$ es:
+\begin{equation}
+  k \approx \frac{2(N+1)^2 \ln(1/\varepsilon)}{\pi^2}.
+\end{equation}
+
+Para $N=512$ y $\varepsilon=10^{-6}$: $k\approx584\,500$ iteraciones.
+Este crecimiento cuadr\'atico con $N$ hace que Jacobi sea impracticable
+para mallas finas; en la pr\'actica se usa como paso base de m\'etodos
+multigrid. Aqu\'i se utiliza con fines pedag\'ogicos y de an\'alisis de
+rendimiento.
+
+\subsection{Validaci\'on Num\'erica}
+
+El error de truncamiento local es $O(h^2)$. Para la validaci\'on se ejecuta
+el m\'etodo en modo convergencia para $N=64$ ($h=1/65$), obteniendo:
+\begin{itemize}
+  \item Iteraciones hasta convergencia: 3\,493
+    (con $\norminf{\phi^{(k+1)}-\phi^{(k)}} < 10^{-6}$)
+  \item Error global: $\norminf{\phi_h - \phi^*} = 8{,}45\times10^{-4}$
+  \item Error relativo: $1{,}67\%$
+  \item Valor en el centro ($x=y=0{,}5$):
+    $\phi_h \approx -0{,}04979$;\quad exacto: $-0{,}05066$
+\end{itemize}
+
+Este error combina el error de discretizaci\'on
+($O(h^2)\approx1{,}94\times10^{-4}$) con el error de iteraci\'on.
+
+% =============================================================================
+\section{Arquitectura del Procesador: Apple M3 arm64}
+\label{sec:architecture}
+% =============================================================================
+
+La jerarqu\'ia de memoria del procesador usado en los experimentos es:
+
+\begin{table}[H]
+\centering
+\caption{Jerarqu\'ia de memoria --- Apple M3 arm64}
+\label{tab:m3_cache}
+\begin{tabular}{llll}
+\toprule
+Nivel & Tama\~no & Latencia (ciclos) & Observaci\'on \\
+\midrule
+Registros NEON    & $128$\,bit $\times 32$ & 1         & 2 doubles/registro \\
+L1D (perf. cores) & 128\,KB                & $\sim$4   & 4 n\'ucleos perf. \\
+L1D (eff. cores)  &  64\,KB                & $\sim$4   & 4 n\'ucleos ef. \\
+L2  (perf. cores) &  16\,MB                & $\sim$12  & Compartida \\
+L2  (eff. cores)  &   4\,MB                & $\sim$12  & \\
+Memoria unif.     &  16\,GB                & $\sim$100+& Sin L3 separado \\
+\midrule
+\textbf{L\'inea de cach\'e} & \textbf{128 bytes} & --- &
+  \textbf{= 16 doubles} \\
+P\'agina de memoria         & 16\,KB             & --- & \\
+Ancho de banda              & $\approx$100\,GB/s & --- & Mem. unificada \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{Clave arquitect\'onica.} La l\'inea de cach\'e de 128\,bytes
+del M3 (el doble que en x86) es fundamental para entender los resultados.
+Cada acceso a un elemento \texttt{double} carga autom\'aticamente 15 elementos
+adicionales de la misma fila (C++, row-major) o de la misma columna (Fortran,
+column-major). Esto amplifica tanto el beneficio del orden correcto de bucles
+como la penalizaci\'on del orden incorrecto.
+
+% =============================================================================
+\section{Implementaciones}
+\label{sec:implementations}
+% =============================================================================
+
+\subsection{Variantes en C++}
+
+Las tres variantes difieren en c\'omo se asigna y accede a la malla
+$(N+2)\times(N+2)$ (incluyendo puntos de frontera).
+
+\subsubsection{Variante~0: \texttt{double**} (Puntero a Puntero)}
+
+\begin{lstlisting}[style=cpp, caption={Asignacion y acceso con double**}]
+double** phi = new double*[NP];
+for (int i = 0; i < NP; ++i)
+    phi[i] = new double[NP]();  // cada fila asignada independientemente
+
+// Acceso: phi[i][j]  -- dos desreferencias de puntero
+// Intercambio O(1): std::swap(phi, phi_new)
+\end{lstlisting}
+
+Las filas se asignan de forma independiente (potencialmente no contiguas),
+pero cada fila es internamente contigua. \textbf{Sin optimizaci\'on (-O0)},
+evita las multiplicaciones de \'indice, siendo la variante m\'as r\'apida
+en ese modo.
+
+\subsubsection{Variante~1: Arreglo Plano Contiguo (\texttt{new double[NP*NP]})}
+
+\begin{lstlisting}[style=cpp, caption={Asignacion y acceso con arreglo plano}]
+double* phi = new double[NP * NP]();  // bloque completamente contiguo
+
+// Acceso: phi[i * NP + j]   (row-major: j es dimension rapida)
+// Intercambio O(1): std::swap(phi, phi_new)
+\end{lstlisting}
+
+Toda la malla ocupa un \'unico bloque contiguo. Con \texttt{-O2}, el
+compilador extrae la multiplicaci\'on $i\cdot NP$ del bucle interno,
+igualando el rendimiento de \texttt{double**}.
+
+\subsubsection{Variante~2: \texttt{std::vector\textless{}double\textgreater{}}}
+
+\begin{lstlisting}[style=cpp, caption={Asignacion y acceso con std::vector}]
+std::vector<double> phi(NP * NP, 0.0);
+// C++11 garantiza almacenamiento contiguo (seccion 23.3.6.1)
+// Intercambio O(1): std::swap(phi, phi_new)
+\end{lstlisting}
+
+El est\'andar C++11 garantiza almacenamiento contiguo. El intercambio con
+\texttt{std::swap} es $O(1)$ al intercambiar punteros internos del vector.
+Con \texttt{-O2} el rendimiento es id\'entico al arreglo plano.
+
+\subsection{Variante en Fortran~90}
+
+\begin{lstlisting}[style=fortran, caption={Arreglo bidimensional Fortran (column-major)}]
+real(real64), pointer :: phi(:,:), phi_new(:,:), tmp_ptr(:,:)
+allocate(phi(N+2, N+2))   ! phi(i,j): columnas son contiguas en memoria
+                           ! phi(i,j) y phi(i+1,j) son adyacentes
+
+! Intercambio O(1) sin copiar datos:
+tmp_ptr => phi
+phi     => phi_new
+phi_new => tmp_ptr
+\end{lstlisting}
+
+Se usan punteros en lugar de arreglos \texttt{ALLOCATABLE} para habilitar el
+intercambio $O(1)$. El almacenamiento column-major implica que \texttt{phi(i,j)}
+y \texttt{phi(i+1,j)} son adyacentes, mientras \texttt{phi(i,j)} y
+\texttt{phi(i,j+1)} est\'an separados $N+2$ elementos.
+
+\subsection{N\'ucleo del Est\'encil de Jacobi}
+
+El n\'ucleo computacional ---id\'entico en todas las variantes--- implementa
+la ecuaci\'on~(\ref{eq:jacobi}):
+
+\begin{lstlisting}[style=cpp, caption={Nucleo del estencil --- C++ flat (orden ij, sin tiling)}]
+for (int i = 1; i <= N; ++i)          // dimension externa (filas)
+    for (int j = 1; j <= N; ++j) {    // dimension interna (columnas)
+        double v = 0.25 * ( phi[IDX(i-1,j)] + phi[IDX(i+1,j)]
+                           + phi[IDX(i,j-1)] + phi[IDX(i,j+1)]
+                           - h2 * f[IDX(i,j)] );
+        double d = std::fabs(v - phi[IDX(i,j)]);
+        phi_new[IDX(i,j)] = v;
+        if (d > max_diff) max_diff = d;   // norma infinito
+    }
+std::swap(phi, phi_new);   // O(1): intercambio de punteros
+\end{lstlisting}
+
+\subsection{An\'alisis de Localidad Espacial}
+
+\subsubsection{C++ (row-major): Orden ij vs ji}
+
+Con almacenamiento row-major, \texttt{phi[i][j]} y \texttt{phi[i][j+1]} son
+adyacentes (una l\'inea de cach\'e = 16 doubles = 16 columnas consecutivas).
+
+\begin{description}
+\item[Orden ij (\'optimo):] \texttt{for(i)\{for(j)\{\ldots\}\}}\\
+  El \'indice $j$ var\'ia en el bucle interno: accesos a
+  \texttt{phi[i][j-1]}, \texttt{phi[i][j]}, \texttt{phi[i][j+1]} son
+  \textbf{secuenciales} dentro de la misma fila. \OK
+
+\item[Orden ji (sub\'optimo):] \texttt{for(j)\{for(i)\{\ldots\}\}}\\
+  El \'indice $i$ var\'ia en el bucle interno: cada acceso
+  \texttt{phi[i][j]} salta una fila completa, stride $=(N+2)\times8$\,bytes
+  $\approx33$\,KB para $N=4096$. Fallo de cach\'e por cada acceso. \NO
+\end{description}
+
+\subsubsection{Fortran (column-major): Orden ji vs ij}
+
+En Fortran, \texttt{phi(i,j)} y \texttt{phi(i+1,j)} son adyacentes.
+
+\begin{description}
+\item[Orden ji (\'optimo):] \texttt{do j; do i}\\
+  El \'indice $i$ var\'ia en el bucle interno: accesos secuenciales
+  en la columna. \OK
+
+\item[Orden ij (sub\'optimo):] \texttt{do i; do j}\\
+  El \'indice $j$ var\'ia en el bucle interno: stride $=(N+2)\times8$\,bytes
+  por acceso. \NO
+\end{description}
+
+\subsection{Optimizaci\'on por Blocking (Cache Tiling)}
+
+Se divide la malla en bloques de $B\times B$ puntos:
+
+\begin{lstlisting}[style=cpp, caption={Nucleo Jacobi con blocking B x B --- C++ flat}]
+int nb = (N + B - 1) / B;
+for (int bi = 0; bi < nb; ++bi) {
+    int i0 = bi * B + 1, i1 = std::min(N, (bi+1)*B);
+    for (int bj = 0; bj < nb; ++bj) {
+        int j0 = bj * B + 1, j1 = std::min(N, (bj+1)*B);
+        for (int i = i0; i <= i1; ++i)
+            for (int j = j0; j <= j1; ++j)
+                phi_new[IDX(i,j)] = 0.25*(phi[IDX(i-1,j)]+phi[IDX(i+1,j)]
+                                    +phi[IDX(i,j-1)]+phi[IDX(i,j+1)]
+                                    -h2*f[IDX(i,j)]);
+    }
+}
+\end{lstlisting}
+
+El conjunto de trabajo activo por bloque es:
+\begin{equation}
+  W_{\text{bloque}}
+  = \underbrace{(B+2)^2\cdot8}_{\phi^{(k)}}
+  + \underbrace{B^2\cdot8}_{\phi^{(k+1)}}
+  + \underbrace{B^2\cdot8}_{f}
+  \;\text{bytes}
+  \label{eq:working_set}
+\end{equation}
+
+\begin{table}[H]
+\centering
+\caption{Conjunto de trabajo por bloque y cach\'e objetivo --- Apple M3}
+\label{tab:block_cache}
+\begin{tabular}{crrcc}
+\toprule
+$B$ & $W_{\text{bloque}}$ (KB) & $W_{\phi^{(k)}}$ (KB) & Cach\'e & L1? \\
+\midrule
+8   &  1{,}25 &  0{,}61 & L1 & \OK \\
+16  &  4{,}0  &  2{,}25 & L1 & \OK \\
+32  & 13{,}5  &  8{,}5  & L1 & \OK \\
+64  & 51{,}8  & 32{,}5  & L1 & \OK (ajustado) \\
+128 & 204     & 130     & L2 & \NO (L1=128\,KB) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================================
+\section{An\'alisis de Intensidad Aritm\'etica y Modelo Roofline}
+\label{sec:roofline}
+% =============================================================================
+
+\subsection{Operaciones Aritm\'eticas por Punto}
+
+Por cada punto interior $(i,j)$, el n\'ucleo de Jacobi realiza:
+\begin{equation}
+  4\;\text{sumas} + 1\;\text{resta} + 1\;\text{mult. }(h^2 f)
+  + 1\;\text{mult. }(\tfrac{1}{4})
+  + 1\;\text{resta (diferencia)}
+  = 8\;\text{FLOPs por punto}.
+\end{equation}
+
+\subsection{Transferencia de Datos}
+
+Con acceso perfecto de cach\'e (cada elemento leido/escrito una vez):
+\begin{equation}
+  \underbrace{5\;\text{lecturas de }\phi^{(k)}
+  + 1\;\text{lectura de }f}_{\text{7 lecturas totales}}
+  + \underbrace{1\;\text{escritura en }\phi^{(k+1)}}_{}
+  = 8\times8\;\text{bytes} = 64\;\text{bytes/punto}.
+\end{equation}
+
+\subsection{Intensidad Aritm\'etica}
+
+\begin{equation}
+  I = \frac{8\;\text{FLOP}}{64\;\text{bytes}} = 0{,}125\;\text{FLOP/byte}
+  \label{eq:arithmetic_intensity}
+\end{equation}
+
+\subsection{Modelo Roofline --- Apple M3}
+
+\begin{align}
+  \text{Pico computacional}
+  &= 4\;\text{n\'ucleos}\times4{,}05\;\text{GHz}
+    \times2\;\tfrac{\text{FMA}}{\text{ciclo}}
+    \times2\;\tfrac{\text{doubles}}{\text{FMA}}
+  \approx 64\;\text{GFLOPS} \label{eq:peak_compute}\\
+  \text{Ancho de banda}
+  &\approx 100\;\text{GB/s} \quad \text{(mem. unificada)} \label{eq:peak_bw}\\
+  \text{Punto de quiebre}
+  &= \frac{64}{100} = 0{,}64\;\text{FLOP/byte} \label{eq:ridge_point}
+\end{align}
+
+Como $I = 0{,}125 \ll 0{,}64$, el algoritmo es \textbf{fuertemente
+memory-bound}:
+\begin{equation}
+  \text{Rendimiento m\'aximo te\'orico}
+  = I\times B_W = 0{,}125\times100 = 12{,}5\;\text{GFLOPS}
+  \label{eq:max_perf}
+\end{equation}
+Esto representa solo el $19\%$ del pico computacional. El cuello de botella
+es el ancho de banda de memoria, no la capacidad de c\'omputo.
+
+% =============================================================================
+\section{Resultados Experimentales}
+\label{sec:results}
+% =============================================================================
+
+Los experimentos se ejecutan en un MacBook Pro con Apple M3 (4 n\'ucleos de
+rendimiento a 4{,}05\,GHz, 4 de eficiencia) con macOS~25.2.0.
+Los compiladores son \texttt{clang~17.0.0} (arm64) para C++ y
+\texttt{GNU Fortran~15.1.0} (Homebrew GCC) para Fortran.
+
+\subsection{Impacto del Orden de Bucles}
+
+\begin{table}[H]
+\centering
+\caption{Tiempo por iteraci\'on (ms) --- Sin flags de optimizaci\'on (-O0)}
+\label{tab:results_O0}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Variante} & \textbf{N=512} & \textbf{N=1024}
+                  & \textbf{N=2048} & \textbf{N=4096} \\
+\midrule
+C++ \texttt{ptr}    (ij \OK) & 2{,}07  & 8{,}41   & 33{,}71  & 136{,}41  \\
+C++ \texttt{ptr}    (ji \NO) & 2{,}75  & 13{,}55  & 123{,}55 & 720{,}54  \\
+C++ \texttt{flat}   (ij \OK) & 4{,}71  & 18{,}90  & 76{,}50  & 302{,}24  \\
+C++ \texttt{flat}   (ji \NO) & 5{,}06  & 23{,}34  & 119{,}63 & 508{,}91  \\
+C++ \texttt{vector} (ij \OK) & 5{,}97  & 23{,}77  & 95{,}86  & 383{,}58  \\
+C++ \texttt{vector} (ji \NO) & 7{,}25  & 30{,}53  & 157{,}09 & 683{,}56  \\
+\midrule
+Fortran (ji \OK) & 3{,}10  & 12{,}29 & 49{,}52  & 197{,}35  \\
+Fortran (ij \NO) & 3{,}94  & 18{,}15 & 103{,}15 & 459{,}12  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Tiempo por iteraci\'on (ms) --- Con optimizaci\'on -O2}
+\label{tab:results_O2}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Variante} & \textbf{N=512} & \textbf{N=1024}
+                  & \textbf{N=2048} & \textbf{N=4096} \\
+\midrule
+C++ \texttt{ptr}    (ij \OK) & 0{,}323 & 1{,}330 & 5{,}912 & 24{,}500  \\
+C++ \texttt{ptr}    (ji \NO) & 1{,}613 & 7{,}835 & 69{,}154 & 397{,}578 \\
+C++ \texttt{flat}   (ij \OK) & \textbf{0{,}302} & \textbf{1{,}209}
+                             & \textbf{5{,}713} & \textbf{23{,}443} \\
+C++ \texttt{flat}   (ji \NO) & 0{,}833 & 6{,}098 & 56{,}844 & 219{,}343 \\
+C++ \texttt{vector} (ij \OK) & 0{,}302 & 1{,}212 & 5{,}719 & 23{,}334  \\
+C++ \texttt{vector} (ji \NO) & 0{,}824 & 6{,}084 & 60{,}050 & 220{,}003 \\
+\midrule
+Fortran (ji \OK) & \textbf{0{,}305} & \textbf{1{,}226}
+                 & \textbf{5{,}729} & \textbf{23{,}443} \\
+Fortran (ij \NO) & 0{,}870 & 6{,}266 & 59{,}324 & 225{,}200 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Factor de penalizaci\'on (tiempo\textsubscript{malo}
+         / tiempo\textsubscript{bueno}), con -O2}
+\label{tab:penalty}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Variante} & \textbf{N=512} & \textbf{N=1024}
+                  & \textbf{N=2048} & \textbf{N=4096} \\
+\midrule
+C++ \texttt{ptr}    & \TIMES{5{,}0} & \TIMES{5{,}9}
+                    & \TIMES{11{,}7} & \textbf{\TIMES{16{,}2}} \\
+C++ \texttt{flat}   & \TIMES{2{,}8} & \TIMES{5{,}0}
+                    & \TIMES{9{,}9}  & \TIMES{9{,}4} \\
+C++ \texttt{vector} & \TIMES{2{,}7} & \TIMES{5{,}0}
+                    & \TIMES{10{,}5} & \TIMES{9{,}4} \\
+Fortran             & \TIMES{2{,}9} & \TIMES{5{,}1}
+                    & \TIMES{10{,}4} & \TIMES{9{,}6} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{An\'alisis.} El impacto crece con $N$ porque el stride de acceso
+aumenta. Para $N=4096$ con \texttt{ptr}, el stride en orden ji es
+$(N+2)\times8\approx33$\,KB por paso. Con L1D de 128\,KB y 5 accesos por
+punto, el conjunto activo supera la L1, generando un fallo de cach\'e
+pr\'acticamente por cada acceso del bucle interno.
+
+\subsection{Comparaci\'on de Tipos de Almacenamiento en C++}
+
+\begin{table}[H]
+\centering
+\caption{Comparaci\'on de almacenamiento --- orden ij \'optimo,
+         N=4096, con y sin -O2}
+\label{tab:storage_compare}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Almacenamiento} & \textbf{ms/iter (-O0)}
+                        & \textbf{ms/iter (-O2)} & \textbf{Acel.} \\
+\midrule
+\texttt{double**} (ptr)       & 136{,}41 & 24{,}500 & \TIMES{5{,}6}  \\
+\texttt{new double[]} (flat)  & 302{,}24 & 23{,}443 & \textbf{\TIMES{12{,}9}} \\
+\texttt{std::vector}          & 383{,}58 & 23{,}334 & \textbf{\TIMES{16{,}4}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{Observaciones clave:}
+\begin{itemize}
+  \item \textbf{Sin -O2:} \texttt{ptr} es la m\'as r\'apida porque evita
+    multiplicaciones de \'indice $i\!\times\!(N+2)+j$.
+  \item \textbf{Con -O2:} Los tres almacenamientos son pr\'acticamente
+    equivalentes. El compilador extrae $i\!\times\!(N+2)$ del bucle interno
+    y genera accesos secuenciales id\'enticos.
+  \item \textbf{Ventaja de flat/vector:} Garantizan un bloque contiguo
+    \'unico, facilitando el prefetching del hardware.
+\end{itemize}
+
+\subsection{An\'alisis del Blocking}
+
+\begin{table}[H]
+\centering
+\caption{Efecto del blocking --- C++ flat (orden ij), con -O2 (ms/iter)}
+\label{tab:blocking_cpp}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Bloque $B$} & \textbf{N=512} & \textbf{N=1024}
+                    & \textbf{N=2048} & \textbf{N=4096} \\
+\midrule
+Sin tiling & \textbf{0{,}302} & \textbf{1{,}209}
+           & \textbf{5{,}713} & \textbf{23{,}443} \\
+$B=8$   & 0{,}424 & 4{,}763 & 21{,}511 & 95{,}509 \\
+$B=16$  & 0{,}473 & 2{,}944 & 12{,}370 & 50{,}110 \\
+$B=32$  & 0{,}372 & 2{,}018 & 12{,}677 & 50{,}860 \\
+$B=64$  & 0{,}338 & 1{,}940 & 11{,}011 & 51{,}143 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Efecto del blocking --- Fortran (orden ji), con -O2 (ms/iter)}
+\label{tab:blocking_fortran}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Bloque $B$} & \textbf{N=512} & \textbf{N=1024}
+                    & \textbf{N=2048} & \textbf{N=4096} \\
+\midrule
+Sin tiling & \textbf{0{,}305} & \textbf{1{,}226}
+           & \textbf{5{,}729} & \textbf{23{,}443} \\
+$B=8$   & 0{,}423 & 4{,}729 & 21{,}538 & 93{,}290 \\
+$B=16$  & 0{,}479 & 2{,}848 & 12{,}325 & 51{,}804 \\
+$B=32$  & 0{,}367 & 1{,}996 & 12{,}149 & 49{,}642 \\
+$B=64$  & 0{,}325 & 1{,}747 & 10{,}848 & \textbf{45{,}472} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{Resultado inesperado.} El blocking es consistentemente m\'as
+lento que el c\'odigo sin tiling. Las causas son:
+\begin{enumerate}
+  \item \textbf{Prefetcher de hardware agresivo:} El M3 detecta el patr\'on
+    strided regular del bucle ij y precarga filas adyacentes anticipadamente.
+  \item \textbf{Interrupci\'on del prefetching:} El tiling divide el acceso
+    secuencial en trozos de $B$ elementos seguidos de un salto de
+    $N+2-B$ posiciones, confundiendo al prefetcher.
+  \item \textbf{Overhead del tiling:} C\'alculo de l\'imites de bloque
+    (\texttt{min()}, variables adicionales) supera el beneficio de cach\'e.
+\end{enumerate}
+
+Fortran con $B=64$ muestra la menor penalizaci\'on (\TIMES{1{,}9}); el
+conjunto $(66)^2\!\times\!3\!\times\!8\!\approx\!104$\,KB est\'a justo en
+el l\'imite de la L1 de 128\,KB.
+
+\subsection{Aceleraci\'on del Compilador}
+
+\begin{table}[H]
+\centering
+\caption{Factor de aceleraci\'on de -O2 vs sin flags, orden \'optimo}
+\label{tab:compiler_speedup}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Variante} & \textbf{N=512} & \textbf{N=1024}
+                  & \textbf{N=2048} & \textbf{N=4096} \\
+\midrule
+C++ ptr    & \TIMES{6{,}4}  & \TIMES{6{,}3}
+           & \TIMES{5{,}7}  & \TIMES{5{,}6} \\
+C++ flat   & \textbf{\TIMES{15{,}6}} & \textbf{\TIMES{15{,}6}}
+           & \textbf{\TIMES{13{,}4}} & \textbf{\TIMES{12{,}9}} \\
+C++ vector & \textbf{\TIMES{19{,}8}} & \textbf{\TIMES{19{,}6}}
+           & \textbf{\TIMES{16{,}8}} & \textbf{\TIMES{16{,}4}} \\
+Fortran    & \TIMES{10{,}2} & \TIMES{10{,}0}
+           & \TIMES{8{,}6}  & \TIMES{8{,}4} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La aceleraci\'on se explica por: (i)~extracci\'on de invariantes de bucle
+($i\!\times\!(N+2)$ una sola vez); (ii)~vectorizaci\'on NEON (128\,bit,
+2 doubles/instrucci\'on); (iii)~desenrollado de bucles; y
+(iv)~eliminaci\'on de verificaciones de l\'imites.
+
+\subsection{C++ vs Fortran con -O2}
+
+\begin{table}[H]
+\centering
+\caption{Rendimiento C++ vs Fortran --- orden \'optimo, -O2 (ms/iter)}
+\label{tab:cpp_vs_fortran}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Variante} & \textbf{N=512} & \textbf{N=1024}
+                  & \textbf{N=2048} & \textbf{N=4096} \\
+\midrule
+C++ flat   (ij) & 0{,}302 & 1{,}209 & 5{,}713 & 23{,}443 \\
+C++ vector (ij) & 0{,}302 & 1{,}212 & 5{,}719 & 23{,}334 \\
+Fortran    (ji) & 0{,}305 & 1{,}226 & 5{,}729 & 23{,}443 \\
+\midrule
+Diferencia relativa & $<1\%$ & $<2\%$ & $<0{,}3\%$ & $<0{,}5\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Ambos compiladores generan c\'odigo arm64 equivalente para este patr\'on de
+acceso secuencial, probablemente produciendo instrucciones NEON similares.
+
+% =============================================================================
+\section{Figuras de Rendimiento}
+\label{sec:figures}
+% =============================================================================
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{plots/fig1_loop_order_impact.png}
+\caption{Impacto del orden de bucles vs.\ N en escala log-log.
+  Izquierda: sin flags (-O0). Derecha: con -O2.
+  L\'ineas s\'olidas = orden \'optimo; discontinuas = orden sub\'optimo.}
+\label{fig:loop_order}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{plots/fig2_loop_penalty_vs_N.png}
+\caption{Factor de penalizaci\'on por orden incorrecto de bucles vs.\ N.
+  La penalizaci\'on crece con $N$ porque el stride (${\approx}N\!\times\!8$\,bytes)
+  supera la L1D (128\,KB) para $N\gtrsim4000$.}
+\label{fig:penalty}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{plots/fig3_storage_comparison.png}
+\caption{Comparaci\'on de tipos de almacenamiento en C++ con orden ij.
+  Barras semitransparentes = sin flags; barras s\'olidas = con -O2.
+  Los n\'umeros rojos sobre cada par indican la aceleraci\'on.}
+\label{fig:storage}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{plots/fig4_blocking_analysis.png}
+\caption{Efecto del cache tiling para distintos tama\~nos de bloque $B$.
+  El blocking no mejora el rendimiento en el Apple M3 para el est\'encil
+  de 5 puntos de Jacobi, debido al prefetcher de hardware y la gran L2 de 16\,MB.}
+\label{fig:blocking}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{plots/fig5_cpp_vs_fortran.png}
+\caption{Escalado del tiempo por iteraci\'on con $N$ en escala log-log.
+  Todos los esquemas de orden \'optimo siguen $O(N^2)$.
+  Con -O2, C++ y Fortran son pr\'acticamente equivalentes.}
+\label{fig:scaling}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{plots/fig6_compiler_speedup.png}
+\caption{Factor de aceleraci\'on de -O2 vs.\ c\'odigo no optimizado.
+  El speedup de $13$--$16\!\times$ para flat y vector evidencia la eficiencia
+  del compilador: vectorizaci\'on NEON, hoisting de invariantes y
+  desenrollado de bucles.}
+\label{fig:compiler_speedup}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{plots/fig7_roofline.png}
+\caption{Modelo Roofline para el Apple M3. Todos los puntos de medici\'on
+  se ubican en la regi\'on memory-bound (izquierda del punto de quiebre
+  ${\approx}0{,}64$\,FLOP/byte).}
+\label{fig:roofline}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{plots/fig8_heatmap.png}
+\caption{Heatmap comparativo (ms/iter, con -O2).
+  Verde = r\'apido, rojo = lento. El patr\'on muestra que el orden de
+  bucles domina sobre el tipo de almacenamiento.}
+\label{fig:heatmap}
+\end{figure}
+
+% =============================================================================
+\section{Discusi\'on}
+\label{sec:discussion}
+% =============================================================================
+
+\subsection{Memory-bound vs.\ Compute-bound}
+
+Con $I=0{,}125$\,FLOP/byte y punto de quiebre de $0{,}64$\,FLOP/byte,
+el algoritmo es \textbf{fuertemente memory-bound}. El rendimiento medido
+con C++ flat ij en $N=4096$ con -O2 es:
+\begin{align}
+  \text{GFLOPs medidos}
+  &= \frac{4096^2 \times 8\;\text{FLOPs}}{0{,}0234\;\text{s}}
+  \approx 5{,}7\;\text{GFLOPS},\\
+  \text{Eficiencia computacional}
+  &= \frac{5{,}7}{64} \approx 8{,}9\%,\\
+  \text{Bandwidth efectivo}
+  &= \frac{5{,}7}{0{,}125} \approx 45{,}6\;\text{GB/s}.
+\end{align}
+
+El $46\%$ del ancho de banda te\'orico est\'a siendo utilizado, razonable
+para un est\'encil sin prefetching manual.
+
+\subsection{Por qu\'e el Blocking no Ayuda}
+
+El resultado contraintuitivo se debe a tres factores espec\'ificos del M3:
+\begin{enumerate}
+  \item \textbf{Prefetcher agresivo:} El M3 detecta el patr\'on strided
+    regular del bucle ij y precarga filas adyacentes anticipadamente.
+    El tiling interrumpe este patr\'on.
+  \item \textbf{Gran cach\'e L2:} Con 16\,MB de L2, para $N=1024$ toda la
+    malla (${\approx}8$\,MB) cabe en L2, eliminando la necesidad de tiling.
+  \item \textbf{Overhead de control:} El c\'alculo de l\'imites de bloque
+    supera el beneficio de localidad de cach\'e.
+\end{enumerate}
+
+El blocking beneficiar\'ia si la L2 fuese significativamente menor, el
+patr\'on de acceso fuese irregular, o el est\'encil tuviese m\'as
+dependencias temporales.
+
+\subsection{Layout de Memoria: Row-major vs.\ Column-major}
+
+\begin{itemize}
+  \item \textbf{C++ row-major:} Bucle ij produce acceso secuencial a
+    $\phi[i][j\pm1]$. El hardware prefetcher gestiona eficientemente
+    $\phi[i\pm1][j]$ (stride $N+2$).
+  \item \textbf{Fortran column-major:} Bucle ji produce acceso secuencial
+    a $\phi(i\pm1,j)$. An\'alogamente para $\phi(i,j\pm1)$.
+  \item \textbf{Penalizaci\'on del orden incorrecto:} $9{,}4\!\times$ para
+    flat y $9{,}6\!\times$ para Fortran en $N=4096$ con -O2.
+    Pronunciada para \texttt{ptr} ($16{,}2\!\times$) porque la doble
+    indirecci\'on amplifica los fallos de cach\'e.
+\end{itemize}
+
+\subsection{Vectorizaci\'on Autom\'atica}
+
+Con \texttt{-O2}, Apple Clang~17 activa vectorizaci\'on autom\'atica NEON
+(128\,bit, 2 doubles/instrucci\'on FMA) para el bucle interno del est\'encil.
+Esto es posible porque: (i) el bucle sobre $j$ es perfectamente secuencial;
+(ii) Jacobi usa $\phi^{(k)}$ y $\phi^{(k+1)}$ separados (sin dependencias);
+y (iii) la operaci\'on es FMA-compatible. Esto contribuye al speedup de
+$13$--$16\!\times$ observado sobre c\'odigo no optimizado.
+
+% =============================================================================
+\section{Conclusiones}
+\label{sec:conclusions}
+% =============================================================================
+
+Este taller demuestra emp\'iricamente los principios del dise\~no cache-aware
+para HPC en arquitecturas modernas.
+
+\begin{enumerate}
+  \item \textbf{El orden de bucles es el factor dominante.} El orden correcto
+    (ij en C++, ji en Fortran) produce acceso secuencial; el incorrecto genera
+    stride ${\sim}N\!\times\!8$\,bytes, con penalizaciones de
+    $9\!\times$ a $16\!\times$ para $N=4096$.
+
+  \item \textbf{Con -O2, los tres tipos de almacenamiento C++ son
+    equivalentes} ($<1\%$ de diferencia). Sin optimizaci\'on, \texttt{ptr}
+    aventaja al arreglo plano por evitar multiplicaciones de \'indice.
+    \texttt{std::vector} ofrece la misma eficiencia que flat con mayor
+    seguridad.
+
+  \item \textbf{El blocking/tiling no mejora el rendimiento} en el Apple M3
+    para este est\'encil. El prefetcher y la gran L2 de 16\,MB compensan
+    el patr\'on strided. El overhead de control supera el beneficio de
+    cach\'e.
+
+  \item \textbf{El compilador produce aceleraciones masivas:} -O2 genera
+    speedups de $13\!\times$ a $16\!\times$ sobre c\'odigo no optimizado,
+    evidenciando la importancia de vectorizaci\'on NEON, hoisting de
+    invariantes y desenrollado de bucles.
+
+  \item \textbf{C++ y Fortran son equivalentes en rendimiento} con -O2.
+    Ambos compiladores generan c\'odigo arm64 igualmente eficiente.
+    La diferencia es conceptual: el programador debe elegir el orden de
+    bucles compatible con el layout del lenguaje.
+
+  \item \textbf{El algoritmo es fuertemente memory-bound:} $I\approx0{,}125$
+    FLOP/byte, aprovechando solo el $19\%$ del pico computacional del M3.
+    El cuello de botella es el ancho de banda de memoria.
+
+  \item \textbf{La l\'inea de cach\'e de 128 bytes del M3} (el doble de
+    x86) amplifica los efectos de localidad espacial, haciendo este
+    procesador especialmente sensible al orden de los accesos.
+\end{enumerate}
+
+\noindent\textbf{Orden de prioridad en optimizaci\'on de est\'enciles HPC:}
+\[
+  \underbrace{\text{orden de bucles}}_{\text{factor dominante}}
+  \gg
+  \text{optimizaci\'on del compilador}
+  \gg
+  \text{tipo de almacenamiento}
+  \gg
+  \underbrace{\text{blocking}}_{\text{depende de la arquitectura}}
+\]
+
+% =============================================================================
+\begin{thebibliography}{9}
+
+\bibitem{leveque2007}
+  R.~J. LeVeque,
+  \textit{Finite Difference Methods for Ordinary and Partial
+    Differential Equations},
+  SIAM, 2007.
+
+\bibitem{saad2003}
+  Y.~Saad,
+  \textit{Iterative Methods for Sparse Linear Systems}, 2nd ed.,
+  SIAM, 2003.
+
+\bibitem{williams2009}
+  S.~Williams, A.~Waterman, D.~Patterson,
+  ``Roofline: An Insightful Visual Performance Model for Multicore
+    Architectures,''
+  \textit{Communications of the ACM}, vol.~52, no.~4, pp.~65--76, 2009.
+
+\bibitem{drepper2007}
+  U.~Drepper,
+  \textit{What Every Programmer Should Know About Memory},
+  Red Hat, Inc., 2007.
+
+\bibitem{hager2010}
+  G.~Hager, G.~Wellein,
+  \textit{Introduction to High Performance Computing for Scientists
+    and Engineers},
+  CRC Press, 2010.
+
+\bibitem{stroustrup2013}
+  B.~Stroustrup,
+  \textit{The C++ Programming Language}, 4th ed.,
+  Addison-Wesley, 2013.
+
+\bibitem{metcalf2011}
+  M.~Metcalf, J.~Reid, M.~Cohen,
+  \textit{Modern Fortran Explained}, 4th ed.,
+  Oxford University Press, 2011.
+
+\end{thebibliography}
+
+\end{document}
