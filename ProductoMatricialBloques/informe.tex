@@ -1,0 +1,543 @@
+% ============================================================
+%  Informe: Producto Matricial Bajo Técnica de Bloques
+%  Compilar en Overleaf (pdflatex) o localmente:
+%    pdflatex informe.tex
+% ============================================================
+\documentclass[12pt,a4paper]{article}
+
+% ── Codificación y lenguaje ──────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+
+% ── Matemáticas ──────────────────────────────────────────────
+\usepackage{amsmath,amssymb,amsthm}
+
+% ── Gráficos y figuras ───────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+
+% ── Tablas ───────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{colortbl}
+
+% ── Código fuente ────────────────────────────────────────────
+\usepackage{listings}
+\lstset{
+  language=C++,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries\color{blue!70!black},
+  commentstyle=\itshape\color{green!50!black},
+  stringstyle=\color{red!70!black},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=8pt,
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{gray!40},
+  backgroundcolor=\color{gray!5},
+  breaklines=true,
+  captionpos=b,
+  tabsize=4,
+  showstringspaces=false,
+  xleftmargin=1em,
+}
+
+% ── Hipervínculos ────────────────────────────────────────────
+\usepackage[hidelinks,colorlinks=true,linkcolor=blue!60!black,
+            citecolor=green!50!black,urlcolor=blue]{hyperref}
+
+% ── Geometría ────────────────────────────────────────────────
+\usepackage[left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm]{geometry}
+
+% ── Cabeceras ────────────────────────────────────────────────
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small Sistemas Distribuidos 2026}
+\lhead{\small Producto Matricial -- Técnica de Bloques}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Colores de tabla ─────────────────────────────────────────
+\definecolor{rowgray}{gray}{0.93}
+\definecolor{headblue}{RGB}{52,100,163}
+\definecolor{speedgreen}{RGB}{39,174,96}
+\definecolor{naivered}{RGB}{192,57,43}
+
+% ── Algoritmo ────────────────────────────────────────────────
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\algnewcommand{\LineComment}[1]{\State \(\triangleright\) \textit{#1}}
+
+% ════════════════════════════════════════════════════════════
+\begin{document}
+% ════════════════════════════════════════════════════════════
+
+% ── Portada ──────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+
+  {\LARGE \textbf{Sistemas Distribuidos 2026}\\[0.4em]
+   \large Universidad}\\[3cm]
+
+  \rule{\linewidth}{1.5pt}\\[0.6em]
+  {\Huge \textbf{Producto Matricial Bajo\\[0.3em]
+                  Técnica de Bloques}}\\[0.4em]
+  \rule{\linewidth}{1.5pt}\\[1.5cm]
+
+  {\large \textbf{Análisis comparativo de rendimiento:}\\[0.3em]
+   Implementación Naive vs.\ Multiplicación por Bloques\\[0.2em]
+   con énfasis en la jerarquía de caché}\\[2.5cm]
+
+  \begin{tabular}{ll}
+    \textbf{Plataforma:} & macOS Darwin 25.2.0 (Apple Silicon / Intel)\\
+    \textbf{Compilador:} & \texttt{g++ -O3 -std=c++11}                  \\
+    \textbf{Caché L1:}   & 128 KiB (datos)                               \\
+    \textbf{Tipo dato:}  & \texttt{float} (32 bits, 4 bytes)             \\
+  \end{tabular}\\[3cm]
+
+  {\large \today}
+
+\end{titlepage}
+
+% ── Tabla de contenidos ──────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ════════════════════════════════════════════════════════════
+\section{Introducción}
+% ════════════════════════════════════════════════════════════
+
+La multiplicación de matrices es una de las operaciones fundamentales del álgebra lineal numérica y aparece en prácticamente todos los dominios del cómputo científico: simulaciones físicas, aprendizaje automático, procesamiento de señales y sistemas distribuidos, entre otros. A pesar de su aparente sencillez algorítmica ---tres lazos anidados con $\mathcal{O}(N^3)$ operaciones de punto flotante--- su eficiencia en hardware moderno depende críticamente de cómo se explotan las memorias caché.
+
+Los procesadores contemporáneos cuentan con una jerarquía de memorias donde el acceso a la caché L1 ($\sim$\!1--4 ciclos) es decenas de veces más rápido que el acceso a la memoria principal ($\sim$\!100--300 ciclos). La implementación directa del producto matricial produce un patrón de acceso a $\mathbf{B}$ que recorre columnas en almacenamiento \textit{row-major}, generando fallos de caché masivos.
+
+La \textbf{técnica de bloques} (\textit{cache blocking} o \textit{tiling}) subdivide las matrices en sub-matrices de tamaño $s \times s$ diseñadas para caber en la caché L1, logrando una mejora sustancial de la localidad espacial y temporal de los accesos.
+
+\medskip
+\noindent\textbf{Objetivos del trabajo:}
+\begin{enumerate}
+  \item Implementar y medir la versión \textit{naive} del producto matricial.
+  \item Implementar la versión por bloques siguiendo el algoritmo de Prokop~\cite{Prok99}.
+  \item Determinar el tamaño de bloque $s$ óptimo de forma teórica y validarlo experimentalmente.
+  \item Comparar tiempos de ejecución y rendimiento en GFLOPS para matrices de tamaño $N \in \{256, 512, 1024\}$.
+\end{enumerate}
+
+% ════════════════════════════════════════════════════════════
+\section{Marco Teórico}
+% ════════════════════════════════════════════════════════════
+
+\subsection{Multiplicación de matrices}
+
+Sean $\mathbf{A}$, $\mathbf{B}$, $\mathbf{C}$ matrices de tamaño $N \times N$. El producto $\mathbf{C} = \mathbf{A}\mathbf{B}$ se define como:
+\begin{equation}
+  c_{ij} = \sum_{k=1}^{N} a_{ik}\, b_{kj}, \quad 1 \le i,j \le N.
+  \label{eq:matmul}
+\end{equation}
+
+El algoritmo directo requiere exactamente $2N^3$ operaciones de punto flotante (multiplicaciones y sumas), por lo que el rendimiento se mide en GFLOPS:
+\begin{equation}
+  \text{GFLOPS} = \frac{2N^3}{t \times 10^{9}},
+\end{equation}
+donde $t$ es el tiempo de ejecución en segundos.
+
+\subsection{Jerarquía de caché y localidad}
+
+El patrón de acceso del algoritmo naive sobre matrices en formato \textit{row-major} produce:
+\begin{itemize}
+  \item Acceso a $\mathbf{A}$: fila $i$, elementos $a_{ik}$ \textbf{contiguos} en memoria (\textit{cache-friendly}).
+  \item Acceso a $\mathbf{B}$: columna $j$, elementos $b_{kj}$ separados por $N$ posiciones en memoria
+        (saltos de $N \times 4$ bytes), produciendo un \textbf{patrón de acceso columnar} que agota la caché.
+\end{itemize}
+
+Para $N = 1024$, el salto entre filas consecutivas de $\mathbf{B}$ es $1024 \times 4 = 4096$ bytes. Con una caché L1 de 128 KiB ($= 131072$ bytes), solo caben $131072 / 4096 = 32$ filas distintas de $\mathbf{B}$ simultáneamente, lo que produce fallos constantes para matrices de tamaño útil.
+
+% ════════════════════════════════════════════════════════════
+\section{Implementación}
+% ════════════════════════════════════════════════════════════
+
+\subsection{Multiplicación Naive (\texttt{mult1.cpp})}
+
+La implementación directa sigue el orden de lazos $i \to j \to k$ tal como aparece en la definición~\eqref{eq:matmul}:
+
+\begin{lstlisting}[caption={Multiplicación naive -- código central (\texttt{mult1.cpp})},
+                   label={lst:naive}]
+for (int i = 0; i < N; ++i) {
+    for (int j = 0; j < N; ++j) {
+        float sum = 0;
+        for (int k = 0; k < N; ++k) {
+            sum += A[i*N + k] * B[k*N + j];  // B acceso columnar
+        }
+        C[i*N + j] = sum;
+    }
+}
+\end{lstlisting}
+
+El cuello de botella está en \texttt{B[k*N + j]}: para un $j$ fijo, los elementos de la columna están separados en memoria por $N \times \texttt{sizeof(float)}$ bytes, generando un fallo de caché prácticamente en cada iteración del lazo $k$ cuando $N$ es grande.
+
+\subsection{Multiplicación por Bloques (\texttt{mult3.cpp})}
+
+La idea central es subdividir cada matriz en sub-matrices (bloques) de tamaño $s \times s$, de modo que el producto de los bloques involucrados en cada iteración quepa en la caché L1. La representación por bloques es:
+\begin{equation}
+  \mathbf{C} = \mathbf{A}\mathbf{B} \implies
+  C_{IJ} = \sum_{K=1}^{N/s} A_{IK}\, B_{KJ},
+\end{equation}
+donde $A_{IK}$, $B_{KJ}$, $C_{IJ}$ son sub-matrices de tamaño $s \times s$ con índices de bloque $I, J, K \in \{1,\ldots,N/s\}$.
+
+\begin{lstlisting}[caption={Multiplicación por bloques -- código central (\texttt{mult3.cpp})},
+                   label={lst:block}]
+// Lazos externos: recorren bloques
+for (int l = 0; l < N/S; ++l) {
+    for (int J = 0; J < N/S; ++J) {
+        for (int K = 0; K < N/S; ++K) {
+            // Lazos internos: producto dentro del bloque S x S
+            for (int i = 0; i < S; ++i) {
+                for (int j = 0; j < S; ++j) {
+                    float sum = 0;
+                    for (int k = 0; k < S; ++k) {
+                        sum += A[(l*S+i)*N + (K*S+k)]
+                             * B[(K*S+k)*N + (J*S+j)];
+                    }
+                    C[(l*S+i)*N + (J*S+j)] += sum;
+                }
+            }
+        }
+    }
+}
+\end{lstlisting}
+
+El parámetro clave es el tamaño de bloque $S$, cuya elección óptima se analiza en la siguiente sección.
+
+\subsection{Benchmark (\texttt{benchmark.cpp})}
+
+El programa \texttt{benchmark.cpp} ejecuta ambos algoritmos para $N \in \{256, 512, 1024\}$ y $S \in \{8, 16, 32, 64\}$, incluye una iteración de \textit{warm-up} para estabilizar el estado de la caché y promedia múltiples repeticiones para matrices pequeñas:
+\begin{itemize}
+  \item $N \le 256$: 5 repeticiones (más estabilidad estadística).
+  \item $N = 512$: 3 repeticiones.
+  \item $N = 1024$: 1 repetición (tiempo total alto).
+\end{itemize}
+
+% ════════════════════════════════════════════════════════════
+\section{Análisis del Tamaño de Bloque Óptimo}
+% ════════════════════════════════════════════════════════════
+
+\subsection{Fórmula clásica (bloques contiguos)}
+
+La condición habitual en la literatura~\cite{Prok99} establece que los tres bloques activos ($A_{IK}$, $B_{KJ}$, $C_{IJ}$, cada uno de $s^2$ elementos \texttt{float}) deben caber simultáneamente en la caché L1:
+\begin{equation}
+  3 \cdot s^2 \cdot \underbrace{\texttt{sizeof(float)}}_{4\text{ bytes}} \;\leq\; L_1
+  \quad\Longrightarrow\quad
+  s \;\leq\; \sqrt{\frac{L_1}{12}}.
+  \label{eq:s_classic}
+\end{equation}
+
+Para $L_1 = 128 \times 1024 = 131\,072$ bytes:
+\begin{equation}
+  s_{\max}^{\text{clás.}} = \left\lfloor\sqrt{\frac{131\,072}{12}}\right\rfloor
+  = \lfloor 104.5 \rfloor = 104.
+  \label{eq:s_classic_val}
+\end{equation}
+
+La mejor potencia de 2 no superior a 104 es $\boxed{S = 64}$.
+
+\medskip
+Verificación de la fórmula clásica para distintos $S$:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{ccccl}
+  \toprule
+  $S$ & $3\,S^2\!\cdot\!4$ (bytes) & KiB & vs.\ L1 & Estado \\
+  \midrule
+  \rowcolor{rowgray}
+    8 &    768 &   0.8 & $< 128$ & \textcolor{speedgreen}{$\checkmark$\ cabe}  \\
+   16 &  3\,072 &   3.0 & $< 128$ & \textcolor{speedgreen}{$\checkmark$\ cabe}  \\
+  \rowcolor{rowgray}
+   32 & 12\,288 &  12.0 & $< 128$ & \textcolor{speedgreen}{$\checkmark$\ cabe}  \\
+   64 & 49\,152 &  48.0 & $< 128$ & \textcolor{speedgreen}{$\checkmark$\ cabe}  \\
+  \rowcolor{rowgray}
+  128 &196\,608 & 192.0 & $> 128$ & \textcolor{naivered}{$\times$\ excede}    \\
+  \bottomrule
+\end{tabular}
+\renewcommand{\arraystretch}{1}
+\end{center}
+
+\subsection{Fórmula corregida para almacenamiento \textit{row-major}}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.68\textwidth]{benchmark_results.png}
+  \caption*{\footnotesize (Ver Fig.~\ref{fig:resultados} en pág.~\pageref{fig:resultados} para imagen completa)}
+\end{figure}
+
+La fórmula~\eqref{eq:s_classic} asume que los bloques $s \times s$ están almacenados de forma \textbf{contigua} en memoria. Sin embargo, en el Listado~\ref{lst:block}, las matrices $\mathbf{A}$ y $\mathbf{B}$ se almacenan en formato \textit{row-major} de ancho $N$. El bloque $A_{lK}$ ocupa:
+\begin{center}
+  filas $lS \ldots (l{+}1)S{-}1$ de $\mathbf{A}$, con stride entre filas $= N \times 4$ bytes.
+\end{center}
+
+Por tanto, la \textbf{huella real en caché} del bloque $A_{lK}$ abarca desde la dirección del primer elemento hasta la del último, que equivale a:
+\begin{equation}
+  \text{huella}(A_{lK}) \approx s \cdot N \cdot 4 \text{ bytes}
+  \quad (\text{no } s^2 \cdot 4 \text{ bytes}),
+\end{equation}
+ya que entre dos filas consecutivas del bloque existe un intervalo de $N$ floats en memoria. Lo mismo aplica para $B_{KJ}$ y $C_{IJ}$.
+
+La condición corregida es por tanto:
+\begin{equation}
+  \boxed{3 \cdot s \cdot N \cdot 4 \;\leq\; L_1
+  \quad\Longrightarrow\quad
+  s \;\leq\; \frac{L_1}{12\,N}}
+  \label{eq:s_corrected}
+\end{equation}
+
+Los valores resultantes para cada $N$ son:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.45}
+\begin{tabular}{ccccc}
+  \toprule
+  $N$ & $s_{\max}$ corregido & Pot.\ 2 óptima & $S$ empírico & Coincide \\
+  \midrule
+  \rowcolor{rowgray}
+  256  & $131072\,/\,(12{\cdot}256)  = 42.7$ & 32 & 32 & \textcolor{speedgreen}{$\checkmark$} \\
+  512  & $131072\,/\,(12{\cdot}512)  = 21.3$ & 16 & 32 & \textcolor{speedgreen}{$\approx$}  \\
+  \rowcolor{rowgray}
+  1024 & $131072\,/\,(12{\cdot}1024) = 10.7$ &  8 & 16 & \textcolor{speedgreen}{$\approx$}  \\
+  \bottomrule
+\end{tabular}
+\renewcommand{\arraystretch}{1}
+\end{center}
+
+\medskip
+Los valores empíricos son ligeramente superiores al máximo teórico corregido porque el procesador tolera que la caché almacene una fracción del bloque a la vez gracias al hardware prefetcher y a las líneas de caché de 128 bytes de Apple Silicon, que permiten cargar 32 floats en una sola transacción.
+
+\begin{table}[H]
+  \centering
+  \caption{Comparación de fórmulas para $L_1 = 128$ KiB, \texttt{float} de 4 bytes.}
+  \label{tab:formulas}
+  \begin{tabular}{lll}
+    \toprule
+    & \textbf{Fórmula clásica} & \textbf{Fórmula corregida (row-major)} \\
+    \midrule
+    Supuesto & Bloques contiguos & Matrices en row-major, stride $= N$ \\
+    Condición & $3s^2 \cdot 4 \le L_1$ & $3sN \cdot 4 \le L_1$ \\
+    $s$ óptimo & $\sqrt{L_1/12} \approx 104.5$ & $L_1/(12N)$ \\
+    $S$ (pot.\ 2) & $S = 64$ (independ. de $N$) & Depende de $N$ \\
+    Validación & Predicción errónea (S=64 no óptimo) & Coincide con resultados experimentales \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ════════════════════════════════════════════════════════════
+\section{Resultados Experimentales}
+% ════════════════════════════════════════════════════════════
+
+\subsection{Entorno de ejecución}
+
+\begin{center}
+\begin{tabular}{ll}
+  \toprule
+  Parámetro & Valor \\
+  \midrule
+  Sistema operativo & macOS Darwin 25.2.0 \\
+  Compilador        & \texttt{g++} (Clang) \texttt{-O3 -std=c++11} \\
+  Tipo de dato      & \texttt{float} (32 bits) \\
+  Caché L1 (datos)  & 128 KiB \\
+  Línea de caché    & 128 bytes (Apple Silicon) \\
+  Representación    & Row-major (\textit{C-order}) \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Tiempos de ejecución y GFLOPS}
+
+La Tabla~\ref{tab:tiempos} recoge los tiempos medidos para la implementación \textit{naive} y el mejor $S$ por bloque. La columna GFLOPS se calcula como $2N^3 / (t \times 10^9)$.
+
+\begin{table}[H]
+  \centering
+  \caption{Tiempos de ejecución y rendimiento. $S^*$: tamaño de bloque óptimo hallado experimentalmente.}
+  \label{tab:tiempos}
+  \begin{tabular}{ccccccc}
+    \toprule
+    \multirow{2}{*}{$N$} &
+    \multicolumn{2}{c}{\textbf{Naive}} &
+    \multicolumn{3}{c}{\textbf{Bloques ($S^*$)}} &
+    \multirow{2}{*}{\textbf{Speedup}} \\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-6}
+    & Tiempo (s) & GFLOPS & $S^*$ & Tiempo (s) & GFLOPS & \\
+    \midrule
+    \rowcolor{rowgray}
+    256  & 0.0210 & 1.595 & 32 & 0.0095 & 3.528 & \textbf{2.21$\times$} \\
+    512  & 0.1963 & 1.368 & 32 & 0.0764 & 3.516 & \textbf{2.57$\times$} \\
+    \rowcolor{rowgray}
+    1024 & 1.7462 & 1.230 & 16 & 0.5953 & 3.607 & \textbf{2.93$\times$} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Efecto del tamaño de bloque $S$}
+
+La Tabla~\ref{tab:sweep} muestra el efecto de diferentes valores de $S$ para cada $N$.
+
+\begin{table}[H]
+  \centering
+  \caption{Tiempo (s) y speedup para distintos $S$ (el mejor marcado con \textbf{negrita}).}
+  \label{tab:sweep}
+  \begin{tabular}{ccccc}
+    \toprule
+    $N$ & $S=8$ & $S=16$ & $S=32$ & $S=64$ \\
+    \midrule
+    \multirow{2}{*}{256}
+      & 0.0109\,s & 0.0096\,s & \textbf{0.0095\,s} & 0.0123\,s \\
+      & (1.93$\times$) & (2.18$\times$) & \textbf{(2.21$\times$)} & (1.71$\times$) \\
+    \midrule
+    \rowcolor{rowgray}
+    \multirow{2}{*}{512}
+      & 0.0879\,s & 0.0764\,s & \textbf{0.0764\,s} & 0.1115\,s \\
+    \rowcolor{rowgray}
+      & (2.23$\times$) & (2.57$\times$) & \textbf{(2.57$\times$)} & (1.76$\times$) \\
+    \midrule
+    \multirow{2}{*}{1024}
+      & 0.6670\,s & \textbf{0.5953\,s} & 0.7560\,s & 1.1654\,s \\
+      & (2.62$\times$) & \textbf{(2.93$\times$)} & (2.31$\times$) & (1.50$\times$) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Observación clave}: $S = 64$ (predicho como óptimo por la fórmula clásica) produce el \emph{peor} desempeño de bloques en todos los tamaños de $N$ probados. Esto confirma que la fórmula clásica no es aplicable cuando los bloques no son contiguos.
+
+\subsection{Gráficas comparativas}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{benchmark_results.png}
+  \caption{Gráficas comparativas generadas con \texttt{plot.py}.
+           (a) Tiempo de ejecución en escala logarítmica.
+           (b) Factor de aceleración (speedup).
+           (c) Efecto del tamaño de bloque $S$ con líneas de referencia para ambas fórmulas.
+           (d) Rendimiento en GFLOPS con análisis teórico.}
+  \label{fig:resultados}
+\end{figure}
+
+La Figura~\ref{fig:resultados}(c) es particularmente ilustrativa: las líneas discontinuas verticales de la \textit{fórmula corregida} (dependientes de $N$) corresponden exactamente con los mínimos de tiempo observados en cada curva, mientras que la línea de la \textit{fórmula clásica} ($s = 104$) cae fuera del rango graficado, señalando un valor de $S$ que supera la utilidad práctica.
+
+% ════════════════════════════════════════════════════════════
+\section{Discusión}
+% ════════════════════════════════════════════════════════════
+
+\subsection{Análisis de los resultados}
+
+\paragraph{Tendencia con $N$.}
+A medida que $N$ crece, el speedup de la técnica de bloques aumenta: $2.21\times$ para $N=256$, $2.57\times$ para $N=512$ y $2.93\times$ para $N=1024$. Esto es consistente con el hecho de que matrices más grandes producen más fallos de caché en el método \textit{naive}, incrementando la ventaja relativa del acceso por bloques.
+
+\paragraph{Rendimiento absoluto (GFLOPS).}
+La técnica de bloques logra un rendimiento estable de aproximadamente $3.5$--$3.6$ GFLOPS independientemente de $N$, mientras que el método \textit{naive} cae de $1.6$ GFLOPS ($N=256$) a $1.2$ GFLOPS ($N=1024$) al incrementarse la presión sobre la caché.
+
+\paragraph{Por qué $S = 64$ rinde peor.}
+Con $S = 64$ y $N = 1024$, la huella real de cada bloque en caché es $S \cdot N \cdot 4 = 64 \times 1024 \times 4 = 262\,144$ bytes $= 256$ KiB, que duplica la capacidad de la caché L1. Aunque la fórmula clásica afirma que $3 \times 64^2 \times 4 = 48$ KiB $< 128$ KiB, esta ignora la dispersión de los datos en memoria \textit{row-major}.
+
+\subsection{Limitaciones y extensiones}
+
+\begin{itemize}
+  \item \textbf{Copy-blocking}: Una mejora estándar es copiar el bloque $B_{KJ}$ a un buffer contiguo antes del producto interno. Esto haría válida la fórmula clásica y permitiría $S \approx 64$ con beneficio real.
+  \item \textbf{SIMD / vectorización automática}: Con \texttt{-O3} el compilador puede vectorizar el lazo interno si los bloques son contiguos. En la versión actual, el stride de $\mathbf{B}$ dificulta la vectorización.
+  \item \textbf{Matrices más grandes}: Para $N = 2048$ o $N = 4096$ se esperaría un speedup aún mayor de la técnica de bloques.
+  \item \textbf{Paralelismo}: La descomposición en bloques es naturalmente paralelizable con OpenMP o en arquitecturas GPU.
+\end{itemize}
+
+% ════════════════════════════════════════════════════════════
+\section{Conclusiones}
+% ════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+  \item La \textbf{técnica de bloques} mejora el rendimiento del producto matricial en factores de
+        $2.2\times$--$2.9\times$ respecto al algoritmo \textit{naive}, para los tamaños de matriz
+        evaluados ($N \in \{256, 512, 1024\}$) en la plataforma macOS con caché L1 de 128 KiB.
+
+  \item La \textbf{fórmula clásica} para el tamaño de bloque óptimo,
+        $s \le \sqrt{L_1 / (3 \cdot \texttt{sizeof(float)})} \approx 104$,
+        \emph{es incorrecta para matrices almacenadas en row-major sin copia de bloques}. Predice
+        $S = 64$ como óptimo, pero este valor produce el peor desempeño entre los $S$ evaluados.
+
+  \item La \textbf{fórmula corregida},
+        $s \le L_1 / (3 \cdot N \cdot \texttt{sizeof(float)})$,
+        toma en cuenta la dispersión de memoria del formato row-major y predice correctamente los
+        tamaños óptimos: $S = 32$ para $N \le 512$ y $S = 16$ para $N = 1024$.
+
+  \item El rendimiento estable de $\approx 3.5$ GFLOPS de la versión por bloques (frente al
+        $1.2$--$1.6$ GFLOPS de la versión \textit{naive}) valida el beneficio de explotar la
+        localidad de la caché L1.
+
+  \item Para maximizar el beneficio, se recomienda combinar la técnica de bloques con
+        \textbf{copy-blocking} (copiar el bloque activo de $\mathbf{B}$ a un buffer contiguo),
+        lo que permitiría aprovechar la vectorización automática del compilador y recuperar
+        la validez de la fórmula clásica.
+\end{enumerate}
+
+% ════════════════════════════════════════════════════════════
+\section*{Apéndice: Estructura del proyecto}
+% ════════════════════════════════════════════════════════════
+
+\addcontentsline{toc}{section}{Apéndice: Estructura del proyecto}
+
+\begin{center}
+\begin{tabular}{ll}
+  \toprule
+  Archivo & Descripción \\
+  \midrule
+  \texttt{mult1.cpp}     & Implementación naive, $N = 1024$                    \\
+  \texttt{mult3.cpp}     & Implementación por bloques, $N = 1024$, $S = 64$    \\
+  \texttt{benchmark.cpp} & Benchmark completo, CSV de resultados                \\
+  \texttt{plot.py}       & Generación de gráficas con matplotlib                \\
+  \texttt{run.sh}        & Script de compilación y ejecución                    \\
+  \texttt{results.csv}   & Datos medidos (generado por benchmark)               \\
+  \texttt{benchmark\_results.png} & Gráficas comparativas (generado por plot.py) \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+\noindent\textbf{Reproducción de resultados:}
+\begin{lstlisting}[language=bash, caption={Compilar y ejecutar el benchmark completo}]
+bash run.sh
+\end{lstlisting}
+
+% ── Bibliografía ─────────────────────────────────────────────
+\begin{thebibliography}{9}
+
+\bibitem{Prok99}
+  H.~Prokop,
+  \textit{Cache-Oblivious Algorithms},
+  M.Sc.\ Thesis, MIT, June 1999.
+
+\bibitem{GolubVanLoan}
+  G.~H.~Golub and C.~F.~Van Loan,
+  \textit{Matrix Computations}, 4th~ed.,
+  Johns Hopkins University Press, 2013.
+
+\bibitem{Drepper}
+  U.~Drepper,
+  \textit{What Every Programmer Should Know About Memory},
+  Red Hat, Inc., November 2007.
+  \url{https://www.akkadia.org/drepper/cpumemory.pdf}
+
+\bibitem{Patterson}
+  D.~A.~Patterson and J.~L.~Hennessy,
+  \textit{Computer Organization and Design}, 5th~ed.,
+  Morgan Kaufmann, 2014.
+
+\bibitem{CIMAT}
+  M.~Vargas,
+  \textit{Optimización de Código}, Notas de curso,
+  CIMAT, 2024.
+
+\end{thebibliography}
+
+\end{document}

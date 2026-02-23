@@ -3,6 +3,9 @@ Taller1HPC/cpp/poisson_cpp
 Taller1HPC/fortran/poisson_f90
 Taller1HPC/**/*.o
 Taller1HPC/**/*.mod
+ProductoMatricialBloques/mult1
+ProductoMatricialBloques/mult3
+ProductoMatricialBloques/benchmark
 
 # macOS
 .DS_Store
